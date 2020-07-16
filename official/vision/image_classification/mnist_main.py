@@ -19,6 +19,10 @@ from __future__ import print_function
 
 import os
 
+import sys
+sys.path.append("/root/github-sourcecode/models")
+print(sys.path)
+
 from absl import app
 from absl import flags
 from absl import logging
@@ -106,6 +110,7 @@ def run(flags_obj, datasets_override=None, strategy_override=None):
     optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule)
 
     model = build_model()
+    model.summary()
     model.compile(
         optimizer=optimizer,
         loss='sparse_categorical_crossentropy',
@@ -163,7 +168,6 @@ def main(_):
   model_helpers.apply_clean(FLAGS)
   stats = run(flags.FLAGS)
   logging.info('Run stats:\n%s', stats)
-
 
 if __name__ == '__main__':
   logging.set_verbosity(logging.INFO)

@@ -23,6 +23,9 @@ from absl import app
 from absl import flags
 from absl import logging
 import tensorflow as tf
+import tensorflow_datasets as tfds
+import sys
+sys.path.append('/root/github-sourcecode/models')
 
 from official.modeling import hyperparams
 from official.modeling import performance
@@ -37,13 +40,14 @@ from official.vision.image_classification.configs import configs
 from official.vision.image_classification.efficientnet import efficientnet_model
 from official.vision.image_classification.resnet import common
 from official.vision.image_classification.resnet import resnet_model
-
+from official.vision.image_classification.resnet import resnet_mnist_model
 
 def get_models() -> Mapping[str, tf.keras.Model]:
   """Returns the mapping from model type name to Keras model."""
   return  {
       'efficientnet': efficientnet_model.EfficientNet.from_name,
       'resnet': resnet_model.resnet50,
+      'resnet_mnist':resnet_mnist_model.resnet_mnist,
   }
 
 
@@ -146,6 +150,7 @@ def _get_params_from_flags(flags_obj: flags.FlagValues):
   """Get ParamsDict from flags."""
   model = flags_obj.model_type.lower()
   dataset = flags_obj.dataset.lower()
+ 
   params = configs.get_config(model=model, dataset=dataset)
 
   flags_overrides = {
@@ -160,14 +165,17 @@ def _get_params_from_flags(flags_obj: flags.FlagValues):
       },
       'train_dataset': {
           'data_dir': flags_obj.data_dir,
+          'download':True,
       },
       'validation_dataset': {
           'data_dir': flags_obj.data_dir,
+          'download':True,
       },
       'train': {
           'time_history': {
               'log_steps': flags_obj.log_steps,
           },
+          'steps':1,
       },
   }
 
@@ -319,6 +327,7 @@ def train_and_eval(
   # Unpack datasets and builders based on train/val/test splits
   train_builder, validation_builder = builders  # pylint: disable=unbalanced-tuple-unpacking
   train_dataset, validation_dataset = datasets
+  logging.info('train_dataset ', train_dataset)
 
   train_epochs = params.train.epochs
   train_steps = params.train.steps or train_builder.num_steps
@@ -344,7 +353,8 @@ def train_and_eval(
     metrics_map = _get_metrics(one_hot)
     metrics = [metrics_map[metric] for metric in params.train.metrics]
     steps_per_loop = train_steps if params.train.set_epoch_loop else 1
-
+    logging.info('linqing test train_steps: %d', train_steps);
+    logging.info('linqing test steps_per_loop: %d', steps_per_loop);
     if one_hot:
       loss_obj = tf.keras.losses.CategoricalCrossentropy(
           label_smoothing=params.model.loss.label_smoothing)
@@ -352,8 +362,7 @@ def train_and_eval(
       loss_obj = tf.keras.losses.SparseCategoricalCrossentropy()
     model.compile(optimizer=optimizer,
                   loss=loss_obj,
-                  metrics=metrics,
-                  experimental_steps_per_execution=steps_per_loop)
+                  metrics=metrics)
 
     initial_epoch = 0
     if params.train.resume_checkpoint:

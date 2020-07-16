@@ -24,7 +24,7 @@ from official.vision.image_classification import dataset_factory
 from official.vision.image_classification.configs import base_configs
 from official.vision.image_classification.efficientnet import efficientnet_config
 from official.vision.image_classification.resnet import resnet_config
-
+from official.vision.image_classification.resnet import resnet_mnist_config
 
 @dataclasses.dataclass
 class EfficientNetImageNetConfig(base_configs.ExperimentConfig):
@@ -94,6 +94,39 @@ class ResNetImagenetConfig(base_configs.ExperimentConfig):
       steps=None)
   model: base_configs.ModelConfig = resnet_config.ResNetModelConfig()
 
+@dataclasses.dataclass
+class ResNetMnistConfig(base_configs.ExperimentConfig):
+  """Base configuration to train resnet-50 on ImageNet."""
+  export: base_configs.ExportConfig = base_configs.ExportConfig()
+  runtime: base_configs.RuntimeConfig = base_configs.RuntimeConfig()
+  train_dataset: dataset_factory.DatasetConfig = \
+      dataset_factory.MnistConfig(split='train',
+                                     one_hot=False,
+                                     mean_subtract=True,
+                                     standardize=True,
+                                     num_examples=50000)
+  validation_dataset: dataset_factory.DatasetConfig = \
+      dataset_factory.MnistConfig(split='validation',
+                                     one_hot=False,
+                                     mean_subtract=True,
+                                     standardize=True,
+                                     num_examples=10000)
+  train: base_configs.TrainConfig = base_configs.TrainConfig(
+      resume_checkpoint=True,
+      epochs=90,
+      steps=None,
+      callbacks=base_configs.CallbacksConfig(enable_checkpoint_and_export=True,
+                                             enable_tensorboard=True),
+      metrics=['accuracy', 'top_5'],
+      time_history=base_configs.TimeHistoryConfig(log_steps=100),
+      tensorboard=base_configs.TensorboardConfig(track_lr=True,
+                                                 write_model_weights=False),
+      set_epoch_loop=False)
+  evaluation: base_configs.EvalConfig = base_configs.EvalConfig(
+      epochs_between_evals=1,
+      steps=None)
+  model: base_configs.ModelConfig = resnet_mnist_config.ResNetMnistModelConfig()
+
 
 def get_config(model: str, dataset: str) -> base_configs.ExperimentConfig:
   """Given model and dataset names, return the ExperimentConfig."""
@@ -101,7 +134,10 @@ def get_config(model: str, dataset: str) -> base_configs.ExperimentConfig:
       'imagenet': {
           'efficientnet': EfficientNetImageNetConfig(),
           'resnet': ResNetImagenetConfig(),
-      }
+      },
+      'mnist': {
+          'resnet_mnist': ResNetMnistConfig(),  
+      },
   }
   try:
     return dataset_model_config_map[dataset][model]

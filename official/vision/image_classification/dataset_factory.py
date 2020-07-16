@@ -155,6 +155,14 @@ class Cifar10Config(DatasetConfig):
   download: bool = True
   cache: bool = True
 
+@dataclass
+class MnistConfig(DatasetConfig):
+  name: str = 'mnist'
+  image_size: int = 28
+  batch_size: int = 128
+  download: bool = True
+  cache: bool = True
+  num_classes: int = 10
 
 class DatasetBuilder:
   """An object for building datasets.
