@@ -42,6 +42,11 @@ from official.vision.image_classification.resnet import common
 from official.vision.image_classification.resnet import resnet_model
 from official.vision.image_classification.resnet import resnet_mnist_model
 
+@tfds.decode.make_decoder(output_dtype=tf.float32)
+def decode_image(example, feature):
+  """Convert image to float32 and normalize from [0, 255] to [0.0, 1.0]."""
+  return tf.cast(feature.decode_example(example), dtype=tf.float32) / 255
+  
 def get_models() -> Mapping[str, tf.keras.Model]:
   """Returns the mapping from model type name to Keras model."""
   return  {
@@ -320,29 +325,36 @@ def train_and_eval(
   label_smoothing = params.model.loss.label_smoothing
   one_hot = label_smoothing and label_smoothing > 0
 
-  builders = _get_dataset_builders(params, strategy, one_hot)
-  datasets = [builder.build(strategy)
-              if builder else None for builder in builders]
+  #builders = _get_dataset_builders(params, strategy, one_hot)
+  #datasets = [builder.build(strategy)
+  #           if builder else None for builder in builders]
 
   # Unpack datasets and builders based on train/val/test splits
-  train_builder, validation_builder = builders  # pylint: disable=unbalanced-tuple-unpacking
-  train_dataset, validation_dataset = datasets
-  logging.info('train_dataset ', train_dataset)
+  #train_builder, validation_builder = builders  # pylint: disable=unbalanced-tuple-unpacking
+  #train_dataset, validation_dataset = datasets
+  mnist = tfds.builder('mnist',data_dir=params.train_dataset.data_dir)
+  mnist_train, mnist_test = mnist.as_dataset(
+      split=['train', 'test'],
+      decoders={'image': decode_image()},  # pylint: disable=no-value-for-parameter
+      as_supervised=True)
+  train_input_dataset = mnist_train.cache().repeat().shuffle(
+      buffer_size=50000).batch(params.train_dataset.batch_size)
+  eval_input_dataset = mnist_test.cache().repeat().batch(params.train_dataset.batch_size)
 
   train_epochs = params.train.epochs
   train_steps = params.train.steps or train_builder.num_steps
-  validation_steps = params.evaluation.steps or validation_builder.num_steps
+  validation_steps = params.train.steps or validation_builder.num_steps
 
-  initialize(params, train_builder)
+  #initialize(params, train_builder)
 
-  logging.info('Global batch size: %d', train_builder.global_batch_size)
+  #logging.info('Global batch size: %d', train_builder.global_batch_size)
 
   with strategy_scope:
     model_params = params.model.model_params.as_dict()
     model = get_models()[params.model.name](**model_params)
     learning_rate = optimizer_factory.build_learning_rate(
         params=params.model.learning_rate,
-        batch_size=train_builder.global_batch_size,
+        batch_size=params.train_dataset.batch_size,
         train_epochs=train_epochs,
         train_steps=train_steps)
     optimizer = optimizer_factory.build_optimizer(
@@ -377,7 +389,7 @@ def train_and_eval(
         track_lr=params.train.tensorboard.track_lr,
         write_model_weights=params.train.tensorboard.write_model_weights,
         initial_step=initial_epoch * train_steps,
-        batch_size=train_builder.global_batch_size,
+        batch_size=params.train_dataset.batch_size,
         log_steps=params.train.time_history.log_steps,
         model_dir=params.model_dir)
 
@@ -387,15 +399,14 @@ def train_and_eval(
     validation_kwargs = {}
   else:
     validation_kwargs = {
-        'validation_data': validation_dataset,
+        'validation_data': eval_input_dataset,
         'validation_steps': validation_steps,
         'validation_freq': params.evaluation.epochs_between_evals,
     }
-
   history = model.fit(
-      train_dataset,
-      epochs=train_epochs,
-      steps_per_epoch=train_steps,
+      train_input_dataset,
+      epochs=10,
+      steps_per_epoch=390,
       initial_epoch=initial_epoch,
       callbacks=callbacks,
       verbose=2,
@@ -404,7 +415,7 @@ def train_and_eval(
   validation_output = None
   if not params.evaluation.skip_eval:
     validation_output = model.evaluate(
-        validation_dataset, steps=validation_steps, verbose=2)
+        eval_input_dataset, steps=validation_steps, verbose=2)
 
   # TODO(dankondratyuk): eval and save final test accuracy
   stats = common.build_stats(history,
